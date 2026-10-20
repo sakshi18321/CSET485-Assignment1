@@ -1,0 +1,5 @@
+,AUC,Accuracy@0.5,Brier,DP@0.45,EO@0.45,PP@0.45
+Main model B (target two_year_recid),0.7341,0.679,0.2083,0.5074,0.4779,0.9198
+Target = is_recid,0.7395,0.6804,0.2082,0.5441,0.5193,0.8862
+Priors winsorised at train p99 (22),0.7347,0.6781,0.2079,0.5088,0.4779,0.9211
+Race-blind (no race indicators),0.735,0.6836,0.2084,0.5695,0.5734,0.8857

@@ -1,0 +1,2994 @@
+CSET485 – AI and Society
+
+Stress-Testing a Predictive Model
+on the COMPAS Recidivism
+Dataset
+Assignment #1 (10 Marks): Build, Stress-Test and Defend
+
+Student
+
+Sanskar Saxena
+
+Roll number
+
+0450
+
+Assigned dataset
+
+COMPAS Recidivism Risk Score Dataset (roll number ends in 0)
+
+Random seed /
+
+random_state = 450 (last three digits of the roll number); 5,049
+
+split
+
+training rows (70%), 2,165 test rows (30%)
+
+Data source
+
+ProPublica compas-scores-two-years.csv (Broward County,
+Florida)
+
+Companion code
+
+Jupyter notebook CSET485_Assignment1_COMPAS.ipynb;
+Appendix C explains how to regenerate every number in this
+report
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Contents
+Contents
+
+2
+
+Executive summary
+
+3
+
+1 Introduction and objectives
+
+3
+
+2 Dataset description
+
+3
+
+3 Data preprocessing methodology
+
+4
+
+4 Part 1 – Model development, evaluation and mismatch analysis
+
+5
+
+5 Part 2.1 – Simpson’s-paradox hunt
+
+6
+
+6 Part 2.2 – Omitted-variable bias
+
+7
+
+7 Part 2.3 – Adversarial subset construction
+
+8
+
+8 Part 2.4 – Fairness trade-off analysis
+
+9
+
+9 Part 3 – Descriptive analysis questions
+
+12
+
+10 Part 4 – Reflection essay
+
+15
+
+11 Limitations and conclusion
+
+16
+
+References
+
+16
+
+Appendix A – Fairness sweep with the reciprocal orientation
+
+18
+
+Appendix B – Robustness checks
+
+18
+
+Appendix C – Reproducibility and quality control
+
+18
+
+Page 2 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Executive summary
+This report stress-tests risk models built on the COMPAS two-year recidivism file (n = 7,214; seed 450;
+5,049 training and 2,165 test rows). A linear model of the COMPAS decile score (Model A) and a logistic
+model of actual two-year recidivism (Model B; test accuracy 67.9%, AUC 0.734) disagree on 296 test
+defendants (13.67%), almost all of them flagged by Model A only. Four stress tests follow. (1) No genuine
+sign reversal exists; the clearest subgroup difference is a stronger prior-record effect for women (1.024
+versus 0.666 for men), which shrinks once priors are log-transformed. (2) Omitting priors_count turns the
+race coefficient from 0.098 (not significant) into 0.302 (p < 0.001). (3) 90 confident errors (4.16% of the
+test set) are almost exactly as many as the model's own probabilities predict. (4) Across thresholds 0.05 to
+0.95, demographic parity and equalized odds rise and fall together (r = 0.998); the real cost of parity is
+accuracy and predictive parity. I recommend conditional, advisory-only use at t = 0.45 (DP 0.507, EO
+0.478, PP 0.920, accuracy 66.8%), with the limitations documented below.
+
+1 Introduction and objectives
+Predictive models used in high-stakes decisions can look statistically sound while concealing bias, hidden
+confounding and fairness trade-offs. This assignment asks for a model to be built, deliberately attacked,
+and then defended in writing using only numbers the student computed. The objectives are: (i) fit a linear
+(Model A) and a logistic (Model B) model on the assigned dataset and compare the high-risk labels they
+produce; (ii) run four stress tests: a Simpson's-paradox hunt, an omitted-variable experiment, an
+adversarial subset of confident errors, and a fairness-threshold sweep; (iii) answer eight analytical
+questions; and (iv) reflect on whether a policy-maker can responsibly be given “just one number”. My roll
+number (0450) ends in 0, so the assigned dataset is the COMPAS Recidivism Risk Score file, and the
+random seed and split are 450 and 70/30. All results come from one notebook that regenerates every
+table, figure and number in this document.
+
+2 Dataset description
+The data are ProPublica’s compas-scores-two-years.csv (7,214 defendants, 53 columns) from Broward
+County, Florida, downloaded from the URL in the assignment (SHA-256 recorded in Appendix C).
+Defendant IDs are unique; decile_score ranges from 1 to 10. Target-variable check. The brief names a
+binary outcome is_recidivist, but no such column exists. Two candidates do: two_year_recid and is_recid,
+which disagree on 220 people who reoffended after the two-year window. I therefore define is_recidivist :=
+two_year_recid because it alone has a fixed two-year follow-up; its base rate is 45.1% (versus 48.1% for
+is_recid). A sensitivity check with is_recid (Appendix B) changes AUC by only 0.005. Features are age,
+priors_count, three juvenile-record counts, sex, charge degree (felony/misdemeanour) and race. The
+recidivism rate differs by group (Table 1), as do prior records and age, which matters for every fairness
+result that follows.
+Table 1. Dataset summary by demographic group (all 7,214 rows; blank cells were not computed by sex).
+n
+
+Share of
+data
+
+Two-year
+recidivism rate
+
+Mean
+COMPAS
+decile
+
+Mean
+priors
+
+Mean age
+
+African-American
+
+3,696
+
+51.2%
+
+51.4%
+
+5.37
+
+4.44
+
+32.7
+
+Caucasian
+
+2,454
+
+34.0%
+
+39.4%
+
+3.73
+
+2.59
+
+37.7
+
+Hispanic
+
+637
+
+8.8%
+
+36.4%
+
+3.46
+
+2.25
+
+35.5
+
+Other (Asian, Native American,
+Other; pooled)
+
+427
+
+5.9%
+
+35.6%
+
+3.08
+
+2.02
+
+35.1
+
+Male
+
+5,819
+
+80.7%
+
+47.3%
+
+4.59
+
+3.47
+
+34.8
+
+Group
+
+Female
+
+1,395
+
+19.3%
+
+35.7%
+
+4.17
+
+All defendants
+
+7,214
+
+100.0%
+
+45.1%
+
+4.51
+
+Page 3 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Figure 1. Exploratory analysis: (a) recidivism rate by race group, (b) COMPAS decile score, (c) prior convictions and (d)
+age by outcome.
+
+3 Data preprocessing methodology
+Each preprocessing decision is documented below, as the assignment requires. No outcome-derived or
+COMPAS-output column is used as a predictor, and every fitted transformation (the scaler) is estimated on
+the training set only.
+Table 2. Preprocessing decisions.
+Issue
+
+Decision and justification
+
+Missing values
+
+22 of the 53 columns contain missing values (dates, charge descriptions, follow-up and
+violent-recidivism fields). None of them is used as a predictor, so no imputation is needed and no
+row is dropped (n = 7,214); the ten model features have zero missing values (asserted in the
+notebook).
+
+Leakage control
+
+Excluded as predictors: two_year_recid, is_recid, every r_*, vr_* and violent_recid column
+(post-screening outcomes); decile_score, score_text and v_* (COMPAS’s own output, which is Model A’s
+target and a proxy for the outcome); identifiers and dates. The scaler is fitted on the training set only.
+
+Categorical encoding
+
+sex → male (1/0); c_charge_degree → felony (F = 1, M = 0); race → one-hot with Caucasian as
+reference. Asian (n = 32), Native American (n = 18) and Other (n = 377) are pooled into race_Other (n
+= 427) because the two smallest groups are too small to estimate stably. age_cat is dropped
+(redundant with age).
+
+Feature scaling
+
+The five numeric features (age, priors_count, juv_fel_count, juv_misd_count, juv_other_count) are
+z-scored with a StandardScaler fitted on the 5,049 training rows and applied unchanged to the test
+set. Coefficients are therefore per 1 SD of the training distribution; dummy variables are unscaled.
+
+Outliers
+
+IQR-rule outliers are counted in the next table. All values are plausible records (age ≤ 96, priors ≤ 38)
+and the long right tail of priors_count is the high-risk population, so values are retained. A check
+that winsorises priors_count at the training 99th percentile (22) changes test AUC by 0.001 (Appendix
+B).
+
+Target definition
+
+is_recidivist := two_year_recid (see Section 2). Model A’s target is decile_score (1–10).
+
+Table 3. Outlier summary for the numeric features (all retained).
+Min
+
+Median
+
+Mean
+
+99th pct
+
+Max
+
+IQR outliers
+
+% of rows
+
+age
+
+Feature
+
+18
+
+31
+
+34.82
+
+67
+
+96
+
+61
+
+0.8%
+
+priors_count
+
+0
+
+2
+
+3.47
+
+23
+
+38
+
+455
+
+6.3%
+
+juv_fel_count
+
+0
+
+0
+
+0.07
+
+2
+
+20
+
+282
+
+3.9%
+
+juv_misd_count
+
+0
+
+0
+
+0.09
+
+2
+
+13
+
+415
+
+5.8%
+
+Page 4 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Feature
+
+Sanskar Saxena · Roll No. 0450
+
+Min
+
+Median
+
+Mean
+
+99th pct
+
+Max
+
+IQR outliers
+
+% of rows
+
+0
+
+0
+
+0.11
+
+2
+
+17
+
+523
+
+7.2%
+
+juv_other_count
+
+4 Part 1 – Model development, evaluation and mismatch
+analysis
+Models. Model A is ordinary least squares on decile_score; Model B is unpenalised logistic regression on
+is_recidivist. Both use the same ten features and the same split, and were cross-checked against
+scikit-learn (maximum prediction difference 3.6e-14 for A and 4.1e-07 for B). On the test set Model A
+reaches R² = 0.422 (RMSE 2.173 deciles, MAE 1.754); its predictions range from −1.48 to 15.67, i.e.
+outside the valid 1–10 scale, a known weakness of linear models. Model B reaches accuracy 67.9%, AUC
+0.734, precision 0.677 and recall 0.561 at the 0.5 threshold; the majority-class baseline is 54.6%, so the
+model adds 13.3 percentage points. Threshold comparison. Model A’s test median prediction is 4.592;
+flagging predictions ≥ that median labels 1,084 defendants (50.07%) high risk. Flagging Model B
+probabilities ≥ 0.5 labels 814 (37.60%). The two labellings disagree on 296 defendants (13.67%): 283
+are high risk under A only and 13 under B only. Table 7 distinguishes this agreement from accuracy
+against actual outcomes. The reasons for the disagreement are analysed in the answer to Question 1.
+Table 4. Model coefficients on the training set (numeric predictors standardised; Model A in decile points, Model B in
+log-odds).
+Model A (OLS): β
+(SE)
+
+p
+
+Model B
+(logit): β
+
+95% CI
+
+p
+
+const
+
+4.036 (0.089)
+
+<0.001
+
+−0.640
+
+[−0.820, −0.461]
+
+<0.001
+
+age
+
+−1.192 (0.033)
+
+<0.001
+
+−0.526
+
+[−0.596, −0.455]
+
+<0.001
+
+0.591
+
+priors_count
+
+1.233 (0.034)
+
+<0.001
+
+0.701
+
+[0.621, 0.782]
+
+<0.001
+
+2.017
+
+juv_fel_count
+
+0.178 (0.031)
+
+<0.001
+
+0.054
+
+[−0.036, 0.143]
+
+0.238
+
+1.055
+
+juv_misd_count
+
+0.133 (0.033)
+
+<0.001
+
+−0.018
+
+[−0.087, 0.051]
+
+0.612
+
+0.982
+
+juv_other_count
+
+0.140 (0.032)
+
+<0.001
+
+0.049
+
+[−0.021, 0.119]
+
+0.170
+
+1.050
+
+male
+
+−0.052 (0.078)
+
+0.502
+
+0.319
+
+[0.164, 0.475]
+
+<0.001
+
+1.376
+
+felony
+
+0.387 (0.065)
+
+<0.001
+
+0.208
+
+[0.081, 0.335]
+
+0.001
+
+1.231
+
+race_African_American
+
+0.587 (0.070)
+
+<0.001
+
+0.098
+
+[−0.038, 0.235]
+
+0.158
+
+1.103
+
+race_Hispanic
+
+−0.401 (0.113)
+
+<0.001
+
+−0.088
+
+[−0.313, 0.137]
+
+0.441
+
+0.915
+
+race_Other
+
+−0.796 (0.135)
+
+<0.001
+
+−0.180
+
+[−0.449, 0.089]
+
+0.190
+
+0.835
+
+Predictor
+
+Odds ratio
+
+Table 5. Test-set performance of Models A and B.
+Model
+
+Metric (test set unless stated)
+
+Value
+
+A (OLS)
+
+B (logit)
+
+R² (train / test)
+
+0.431 / 0.422
+
+RMSE / MAE (deciles)
+
+2.173 / 1.754
+
+Median / min / max prediction
+
+4.592 / −1.48 / 15.67
+
+Accuracy at 0.5 (majority baseline)
+
+0.679 (0.546)
+
+AUC / Brier score / log-loss
+
+0.734 / 0.208 / 0.606
+
+Precision / recall / F1
+
+0.677 / 0.561 / 0.613
+
+McFadden pseudo-R² (train)
+
+0.105
+
+Table 6. Confusion matrix of the two thresholding approaches (rows: Model A at the median 4.592; columns: Model B
+at 0.5). Mismatched cases are the off-diagonal cells: 13 + 283 = 296 of 2,165 (13.67%).
+Model B: low risk (p < 0.5)
+
+Model B: high risk (p ≥
+0.5)
+
+Total
+1,081
+
+Model A: low risk (< median)
+
+1,068
+
+13
+
+Model A: high risk (≥ median)
+
+283
+
+801
+
+1,084
+
+Total
+
+1,351
+
+814
+
+2,165
+
+Table 7. Agreement is not accuracy: each flag scored against the actual outcome. Both models are correct together on
+1,301 defendants and wrong together on 568; on the 296 disagreements Model B is right 169 times and Model A 127
+times.
+Flag
+Model A (≥ median)
+
+Flag
+rate
+50.1%
+
+Accuracy Precision
+66.0%
+
+61.3%
+
+Page 5 of 19
+
+Recall
+
+FPR
+
+TP
+
+FP
+
+TN
+
+FN
+
+67.7%
+
+35.4%
+
+665
+
+419
+
+763
+
+318
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Flag
+rate
+
+Flag
+Model B (p ≥ 0.5)
+
+37.6%
+
+Sanskar Saxena · Roll No. 0450
+
+Accuracy Precision
+67.9%
+
+67.7%
+
+Recall
+
+FPR
+
+TP
+
+FP
+
+TN
+
+FN
+
+56.1%
+
+22.3%
+
+551
+
+263
+
+919
+
+432
+
+The explanation of why the two approaches flag different people is given in Part 3, Question 1.
+
+5 Part 2.1 – Simpson’s-paradox hunt
+Design. Inference models were fitted on all 7,214 rows (full) and on each subgroup with identical features
+(the split variable omitted). Differences are tested with z = (βA − βB)/√(seA² + seB²). Because I was
+searching for a reversal, I first scanned three demographic splits (race, sex, age ≤ 30 vs > 30) over every
+predictor: 26 comparisons, so the Bonferroni threshold is p < 0.0019. Finding 1: no genuine reversal. 5
+of the 26 coefficients change sign between subgroups, but in none of them are both subgroup coefficients
+significantly non-zero (0 of 5), and none is significant after correction; they are sampling noise around
+zero. For example, the race coefficient is 0.111 [−0.017, 0.238] for men and −0.231 [−0.491, 0.029] for
+women (difference p = 0.021, Bonferroni p = 0.54); I report it as an exploratory observation, not a finding.
+Finding 2: a significantly stronger effect. The priors_count effect is 1.024 [0.813, 1.235] for women
+(B, n = 1,395) versus 0.666 [0.594, 0.738] for men (A, n = 5,819); full data 0.721. The intervals do not
+overlap (z = 3.15, p = 0.0016; Bonferroni p = 0.043). It is the only sex-split difference that survives
+correction (age-split differences are partly mechanical because age is both the splitter and a predictor).
+Diagnostic. Entering priors as log(1 + priors) shrinks the gap to 0.666 (men) versus 0.811 (women), p =
+0.075, so much of the heterogeneity reflects functional form: women have fewer priors (mean 2.28 versus
+3.76). The race split, which matters most for Section 2.4, yields priors_count coefficients of 0.664
+(African-American) versus 0.856 (Caucasian), nominal p = 0.021 but Bonferroni p = 0.55: suggestive, not
+established (Table 9).
+Table 8. Primary split: sex (A = male, n = 5,819; B = female, n = 1,395); logistic coefficients per 1 SD, full data n =
+7,214. Bonferroni over 26 tests. The priors_count row is the finding.
+Predictor
+
+z (A−B)
+
+p
+
+p
+(Bonf.)
+
+Full β
+
+Male (A) β [95% CI]
+
+Female (B) β [95% CI]
+
+age
+
+−0.527
+
+−0.542 [−0.607, −0.476]
+
+−0.468 [−0.610, −0.327]
+
+−0.92
+
+0.359
+
+1.000
+
+priors_count
+
+0.721
+
+0.666 [0.594, 0.738]
+
+1.024 [0.813, 1.235]
+
+−3.15
+
+0.002
+
+0.043
+
+juv_fel_count
+
+0.081
+
+0.078 [0.003, 0.154]
+
+0.046 [−0.351, 0.442]
+
+0.16
+
+0.875
+
+1.000
+
+juv_misd_count
+
+0.010
+
+0.012 [−0.050, 0.074]
+
+−0.026 [−0.211, 0.159]
+
+0.39
+
+0.699
+
+1.000
+
+juv_other_count
+
+0.100
+
+0.093 [0.027, 0.159]
+
+0.065 [−0.121, 0.251]
+
+0.28
+
+0.780
+
+1.000
+
+felony
+
+0.180
+
+0.123 [0.004, 0.242]
+
+0.331 [0.083, 0.580]
+
+−1.48
+
+0.138
+
+1.000
+
+race_African_America
+n
+
+0.049
+
+0.111 [−0.017, 0.238]
+
+−0.231 [−0.491, 0.029]
+
+2.31
+
+0.021
+
+0.538
+
+race_Hispanic
+
+−0.176
+
+−0.196 [−0.406, 0.015]
+
+−0.142 [−0.622, 0.338]
+
+−0.20
+
+0.842
+
+1.000
+
+race_Other
+
+−0.188
+
+−0.163 [−0.410, 0.084]
+
+−0.386 [−0.963, 0.191]
+
+0.69
+
+0.487
+
+1.000
+
+Table 9. Secondary split: race (A = African-American, n = 3,696; B = Caucasian, n = 2,454); race indicators omitted
+from all three models. No difference survives correction.
+Full β
+
+Afr.-Amer. (A) β [95% CI] Caucasian (B) β [95% CI]
+
+z (A−B)
+
+p
+
+p
+(Bonf.)
+
+age
+
+−0.534
+
+−0.620 [−0.711, −0.528]
+
+−0.435 [−0.526, −0.344]
+
+−2.80
+
+0.005
+
+0.132
+
+priors_count
+
+0.722
+
+0.664 [0.579, 0.749]
+
+0.856 [0.717, 0.995]
+
+−2.31
+
+0.021
+
+0.545
+
+juv_fel_count
+
+0.077
+
+0.061 [−0.020, 0.142]
+
+0.047 [−0.134, 0.229]
+
+0.14
+
+0.891
+
+1.000
+
+juv_misd_count
+
+0.009
+
+−0.031 [−0.097, 0.035]
+
+0.083 [−0.065, 0.230]
+
+−1.37
+
+0.169
+
+1.000
+
+juv_other_count
+
+0.095
+
+0.177 [0.084, 0.270]
+
+0.009 [−0.087, 0.105]
+
+2.46
+
+0.014
+
+0.365
+
+male
+
+0.287
+
+0.456 [0.271, 0.640]
+
+0.115 [−0.093, 0.323]
+
+2.40
+
+0.016
+
+0.421
+
+felony
+
+0.177
+
+0.134 [−0.017, 0.285]
+
+0.160 [−0.020, 0.341]
+
+−0.22
+
+0.829
+
+1.000
+
+Predictor
+
+Page 6 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Figure 2. Logistic coefficients with 95% confidence intervals for the full data and each subgroup.
+
+6 Part 2.2 – Omitted-variable bias
+Choice of confounder: priors_count. It is the strongest predictor of recidivism (full-model β = 0.701,
+training-set correlation with the outcome r = 0.27) and is correlated with the other predictors, including
+race_African_American (r = 0.19), juv_misd_count (r = 0.22) and age (r = 0.17), so removing it should
+push its explanatory power onto them. It is also shaped by policing intensity, which is why it is a
+contestable variable. The full model is Model B (training set); the reduced model drops only priors_count.
+Formula: %Δ = (βreduced − βfull) / |βfull| × 100; because this explodes when βfull ≈ 0, Table 10 also reports
+the absolute change and the change in units of the full model’s standard error. Results. The largest
+percentage change is juv_misd_count (−0.018 → 0.109, +708%, a sign flip), but its baseline is almost zero,
+so this is a numerical artefact. The largest absolute and standardised shift is age (−0.526 → −0.312,
++40.6%, 5.9 standard errors). The most consequential is race_African_American: 0.098 (p = 0.158) →
+0.302 (p < 0.001), +207.7%. 4 coefficients (the three juvenile counts and race_African_American) turn
+from non-significant to significant and none loses significance. Test AUC falls from 0.734 to 0.664.
+Caveats. Logistic coefficients are non-collapsible (they change when covariates are dropped even without
+confounding), and priors may be a mediator rather than a confounder; the table shows how fragile
+coefficient interpretations are, not the causal effect of any variable.
+Table 10. Coefficients before (full model = Model B) and after dropping priors_count, training set. %Δ = (β_reduced −
+β_full)/|β_full| × 100; Δ in SE = absolute change divided by the full model’s standard error.
+Predictor
+age
+juv_fel_count
+juv_misd_count
+
+β full (p)
+
+β reduced (p)
+
+Abs. Δ
+
+% change
+
+Δ in SE
+
+−0.526 (<0.001)
+
+−0.312 (<0.001)
+
+0.214
+
++40.6%
+
+5.92
+
+0.054 (0.238)
+
+0.184 (<0.001)
+
+0.130
+
++241.3%
+
+2.85
+
+n.s. → sig.
+
+−0.018 (0.612)
+
+Note
+
+0.109 (0.002)
+
+0.127
+
++708.4%
+
+3.60
+
+sign flip; n.s. →
+sig.
+n.s. → sig.
+
+juv_other_count
+
+0.049 (0.170)
+
+0.104 (0.005)
+
+0.055
+
++111.4%
+
+1.53
+
+male
+
+0.319 (<0.001)
+
+0.434 (<0.001)
+
+0.114
+
++35.8%
+
+1.45
+
+felony
+
+0.208 (0.001)
+
+0.354 (<0.001)
+
+0.147
+
++70.6%
+
+2.27
+
+race_African_American
+
+0.098 (0.158)
+
+0.302 (<0.001)
+
+0.204
+
++207.7%
+
+2.93
+
+race_Hispanic
+
+−0.088 (0.441)
+
+−0.124 (0.265)
+
+−0.035
+
+−39.8%
+
+−0.31
+
+race_Other
+
+−0.180 (0.190)
+
+−0.239 (0.075)
+
+−0.059
+
+−32.6%
+
+−0.43
+
+Page 7 of 19
+
+n.s. → sig.
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Figure 3. Coefficients of the full and reduced models.
+
+7 Part 2.3 – Adversarial subset construction
+Extraction. On the 2,165 test rows there are 35 false positives (P ≥ 0.75, actual 0) and 55 false negatives
+(P ≤ 0.25, actual 1): 90 confident errors, 4.16% of the test set. Because more than 50 qualify, 50
+were drawn at random (random_state = 450): 21 false positives and 29 false negatives. Profile.
+Compared with the full test set, the subset contains no one under 25 (0% versus 20.0%), is much older
+(median age 47.5 versus 31; 56% aged 45+ versus 21.2%), and has a different gender mix (72% male
+versus 80.0%). It is two mirror-image clusters rather than one: all 21 false positives have ≥ 5 priors
+(median 18; 81% African-American, 95% male), whereas the 29 false negatives have none with ≥ 5 priors
+(76% have at most one, 83% are 45 or older, 17% African-American). Why the model fails confidently.
+(a) Calibrated uncertainty: among the 180 test defendants with P ≥ 0.75 the observed recidivism rate is
+80.6% (mean predicted 84.5%), and among the 331 with P ≤ 0.25 it is 16.6% (predicted 18.2%). A
+calibrated model should therefore make about 28.0 confident false positives and 60.4 confident false
+negatives (88.4 in total); the observed 35 and 55 (90) are close, so most of these errors are irreducible
+outcome noise. (b) Ignored non-linearity: adding squared and interaction terms improves fit significantly
+(LR χ² = 81.8, df = 6, p < 0.001) with priors² = −0.086 (diminishing returns) and age² = 0.196 (older
+defendants are not as safe as a straight line implies), but test AUC moves only from 0.734 to 0.739 and
+the count of confident errors does not fall (90 → 114). Misspecification contributes, yet it does not explain
+most of the failures.
+Table 11. Profile of the 50-row adversarial subset compared with the full test set (n = 2,165); FP = false positive, FN =
+false negative; the last column covers all 90 qualifying errors.
+Full test set
+
+Subset (50)
+
+of which FP
+
+of which FN
+
+All errors (90)
+
+n
+
+Characteristic
+
+2165
+
+50
+
+21
+
+29
+
+90
+
+Age, mean
+
+34.7
+
+46.0
+
+38.5
+
+51.3
+
+46.7
+
+Age, median
+
+31.0
+
+47.5
+
+37.0
+
+50.0
+
+48.5
+
+% under 25
+
+20.0
+
+0.0
+
+0.0
+
+0.0
+
+1.1
+
+% aged 45+
+
+21.2
+
+56.0
+
+19.0
+
+82.8
+
+60.0
+
+% male
+
+80.0
+
+72.0
+
+95.2
+
+55.2
+
+77.8
+
+% African-American
+
+51.5
+
+44.0
+
+81.0
+
+17.2
+
+42.2
+
+% Caucasian
+
+34.5
+
+48.0
+
+14.3
+
+72.4
+
+47.8
+
+% Hispanic
+
+8.1
+
+6.0
+
+4.8
+
+6.9
+
+6.7
+
+% Other
+
+5.9
+
+2.0
+
+0.0
+
+3.4
+
+3.3
+
+Priors, mean
+
+3.56
+
+8.22
+
+18.43
+
+0.83
+
+7.07
+
+Priors, median
+
+2.0
+
+2.0
+
+18.0
+
+1.0
+
+2.0
+
+% with 5+ priors
+
+26.6
+
+42.0
+
+100.0
+
+0.0
+
+40.0
+
+% with 0–1 priors
+
+47.2
+
+44.0
+
+0.0
+
+75.9
+
+45.6
+
+% any juvenile record
+
+14.7
+
+12.0
+
+28.6
+
+0.0
+
+11.1
+
+Page 8 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Characteristic
+
+Sanskar Saxena · Roll No. 0450
+
+Full test set
+
+Subset (50)
+
+of which FP
+
+of which FN
+
+All errors (90)
+
+65.6
+
+58.0
+
+81.0
+
+41.4
+
+55.6
+
+% felony charge
+% actually reoffended
+
+45.4
+
+58.0
+
+0.0
+
+100.0
+
+61.1
+
+Mean predicted P
+
+0.455
+
+0.468
+
+0.856
+
+0.187
+
+0.439
+
+Table 12. Prevalence of each trait in the subset versus the remaining 2,115 test rows, with Fisher exact p-values (24
+tests, uncorrected; read as descriptive).
+Rest of test set
+
+All 50: % (p)
+
+FP only: % (p)
+
+FN only: % (p)
+
+age < 25
+
+Trait
+
+20.5%
+
+0.0% (<0.001)
+
+0.0% (0.013)
+
+0.0% (0.002)
+
+age >= 45
+
+20.3%
+
+56.0% (<0.001)
+
+19.0% (1.000)
+
+82.8% (<0.001)
+
+male
+
+80.2%
+
+72.0% (0.153)
+
+95.2% (0.100)
+
+55.2% (0.004)
+
+African-American
+
+51.7%
+
+44.0% (0.317)
+
+81.0% (0.008)
+
+17.2% (<0.001)
+
+priors >= 5
+
+26.2%
+
+42.0% (0.022)
+
+100.0% (<0.001)
+
+0.0% (<0.001)
+
+priors <= 1
+
+47.3%
+
+44.0% (0.670)
+
+0.0% (<0.001)
+
+75.9% (0.002)
+
+any juvenile record
+
+14.8%
+
+12.0% (0.690)
+
+28.6% (0.113)
+
+0.0% (0.016)
+
+felony charge
+
+65.8%
+
+58.0% (0.292)
+
+81.0% (0.170)
+
+41.4% (0.009)
+
+Figure 4. (a) Age and prior record of the 50 confident errors against the test set; (b) calibration of Model B on the test
+set, overall and by race (bins with fewer than 10 people omitted).
+
+8 Part 2.4 – Fairness trade-off analysis
+Groups. Sensitive variable: race. Group A = Caucasian (n = 747), Group B = African-American (n = 1116)
+in the test set (other race groups are excluded here). Test-set base rates are 41.1% (A) and 51.5% (B);
+mean Model B probabilities are 0.39 and 0.53. Orientation. The EO formula takes the minimum of two
+ratios. With the more-flagged group in the denominator both ratios are ≤ 1 and the minimum reports the
+larger disparity; with the reverse orientation the minimum would report the smaller one and understate
+the problem. This orientation also keeps all points inside the required 0–1.5 axes. The reciprocal (A =
+African-American) table is in Appendix A. Zero denominators. A ratio is NA if its denominator is zero or a
+needed rate is undefined. This occurs once, at t = 0.95: nobody in Group A is flagged, so PP is NA (DP and
+EO are computed as 0 because only the numerator is zero). At that threshold only 11 Group B members
+are flagged, so those values carry almost no information.
+Definitions (as in the brief). DP = P(Ŷ = 1 | A) / P(Ŷ = 1 | B); EO = min(TPRA/TPRB, FPRA/FPRB); PP = P(Y
+= 1 | Ŷ = 1, A) / P(Y = 1 | Ŷ = 1, B). Ŷ = 1 if P ≥ t, for t = 0.05, 0.15, …, 0.95. Ideal value 1.0 for all three.
+Table 13. Fairness metrics for every threshold (A = Caucasian, B = African-American; test set). EO is the smaller of the
+TPR and FPR ratios. NA: PP is undefined at t = 0.95 because no one in Group A is flagged. The recommended threshold t
+= 0.45 is highlighted.
+Flagged A / B
+
+DP
+
+TPR ratio
+
+FPR ratio
+
+EO
+
+PP
+
+Accuracy
+
+0.05
+
+t
+
+747 / 1116
+
+1.000
+
+1.000
+
+1.000
+
+1.000
+
+0.798
+
+45.4%
+
+0.15
+
+707 / 1102
+
+0.958
+
+0.976
+
+0.950
+
+0.950
+
+0.812
+
+48.1%
+
+0.25
+
+565 / 1048
+
+0.805
+
+0.890
+
+0.755
+
+0.755
+
+0.882
+
+55.6%
+
+0.35
+
+426 / 939
+
+0.678
+
+0.767
+
+0.630
+
+0.630
+
+0.902
+
+60.9%
+
+Page 9 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+t
+
+Sanskar Saxena · Roll No. 0450
+
+Flagged A / B
+
+DP
+
+TPR ratio
+
+FPR ratio
+
+EO
+
+PP
+
+Accuracy
+
+0.45
+
+252 / 742
+
+0.507
+
+0.585
+
+0.478
+
+0.478
+
+0.920
+
+66.8%
+
+0.55
+
+115 / 441
+
+0.390
+
+0.478
+
+0.340
+
+0.340
+
+0.979
+
+67.4%
+
+0.65
+
+41 / 258
+
+0.237
+
+0.306
+
+0.176
+
+0.176
+
+1.028
+
+63.0%
+
+0.75
+
+24 / 146
+
+0.246
+
+0.304
+
+0.212
+
+0.212
+
+0.988
+
+59.7%
+
+0.85
+
+7 / 68
+
+0.154
+
+0.204
+
+0.095
+
+0.095
+
+1.060
+
+57.0%
+
+0.95
+
+0 / 11
+
+0.000
+
+0.000
+
+0.000
+
+0.000
+
+NA
+
+54.9%
+
+Table 14. Underlying group rates and error counts (Group A: 747 defendants, of whom 440 did not reoffend; Group B:
+1116, of whom 541 did not reoffend).
+t
+
+TPR A
+
+TPR B
+
+FPR A
+
+FPR B
+
+PPV A
+
+PPV B
+
+FP A
+
+FP B
+
+FN A
+
+FN B
+
+0.05
+
+100.0%
+
+100.0%
+
+100.0%
+
+100.0%
+
+41.1%
+
+51.5%
+
+440
+
+541
+
+0
+
+0
+
+0.15
+
+97.4%
+
+99.8%
+
+92.7%
+
+97.6%
+
+42.3%
+
+52.1%
+
+408
+
+528
+
+8
+
+1
+
+0.25
+
+87.6%
+
+98.4%
+
+67.3%
+
+89.1%
+
+47.6%
+
+54.0%
+
+296
+
+482
+
+38
+
+9
+
+0.35
+
+71.3%
+
+93.0%
+
+47.0%
+
+74.7%
+
+51.4%
+
+57.0%
+
+207
+
+404
+
+88
+
+40
+
+0.45
+
+48.5%
+
+83.0%
+
+23.4%
+
+49.0%
+
+59.1%
+
+64.3%
+
+103
+
+265
+
+158
+
+98
+
+0.55
+
+27.4%
+
+57.2%
+
+7.0%
+
+20.7%
+
+73.0%
+
+74.6%
+
+31
+
+112
+
+223
+
+246
+
+0.65
+
+10.7%
+
+35.1%
+
+1.8%
+
+10.4%
+
+80.5%
+
+78.3%
+
+8
+
+56
+
+274
+
+373
+
+0.75
+
+6.2%
+
+20.3%
+
+1.1%
+
+5.4%
+
+79.2%
+
+80.1%
+
+5
+
+29
+
+288
+
+458
+
+0.85
+
+2.0%
+
+9.6%
+
+0.2%
+
+2.4%
+
+85.7%
+
+80.9%
+
+1
+
+13
+
+301
+
+520
+
+0.95
+
+0.0%
+
+1.6%
+
+0.0%
+
+0.4%
+
+NA
+
+81.8%
+
+0
+
+2
+
+307
+
+566
+
+Table 15. Percentile bootstrap intervals (1,000 resamples of the test set, seed 450). “valid” = share of resamples in
+which the ratio was estimable.
+DP: 95% bootstrap CI
+
+EO: 95% bootstrap CI
+
+PP: 95% bootstrap CI
+
+0.05
+
+t
+
+[1.00, 1.00]
+
+[1.00, 1.00]
+
+[0.72, 0.88]
+
+0.15
+
+[0.94, 0.98]
+
+[0.92, 0.97]
+
+[0.73, 0.90]
+
+0.25
+
+[0.77, 0.84]
+
+[0.70, 0.81]
+
+[0.79, 0.98]
+
+0.35
+
+[0.63, 0.73]
+
+[0.57, 0.70]
+
+[0.81, 1.00]
+
+0.45
+
+[0.46, 0.56]
+
+[0.40, 0.56]
+
+[0.82, 1.04]
+
+0.55
+
+[0.32, 0.46]
+
+[0.23, 0.47]
+
+[0.86, 1.10]
+
+0.65
+
+[0.17, 0.32]
+
+[0.06, 0.30]
+
+[0.86, 1.20]
+
+0.75
+
+[0.16, 0.36]
+
+[0.04, 0.35]
+
+[0.75, 1.22]
+
+0.85
+
+[0.05, 0.28]
+
+[0.00, 0.24]
+
+[0.60, 1.36] (100% of draws valid)
+
+0.95
+
+[0.00, 0.00]
+
+[0.00, 0.00] (86% of draws valid)
+
+NA (0% of draws valid)
+
+Page 10 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Figure 5. Required trade-off chart: Demographic Parity (x) against Equalized Odds (y), both on 0–1.5, each point
+labelled by its threshold. The star marks the ideal (1, 1).
+
+Parity score. To compare gains and losses across metrics that can lie on either side of 1, each ratio m is
+converted to s = min(m, 1/m) (1 = perfect parity); percentages below are relative changes in s. DP and
+EO do not trade off here. Across the sweep they are almost perfectly correlated (r = 0.998), and no
+one-step reduction in threshold improves DP while worsening EO (0 of 9 steps), because EO’s binding term
+is the false-positive-rate ratio, which tracks the flag-rate ratio. The assignment’s template therefore
+cannot be completed with EO as the loser; the costs of parity land on predictive parity and accuracy.
+Quantified trade-off. If you improve DP from 0.390 (t = 0.55, the accuracy-maximising threshold) to
+0.507 (t = 0.45), a 30.2% gain, EO also rises from 0.340 to 0.478 (+40.4%), but PP moves away from
+parity from 0.979 to 0.920 (a 6.1% loss) and accuracy falls 0.65 points. The trade-off cost is 6.1/30.2 =
+0.20 percent of PP per percent of DP. One step further (t = 0.45 → 0.35) buys DP +33.6% and EO +31.8%
+for a PP loss of only 1.9% (cost 0.06) but costs 5.9 accuracy points (66.8% → 60.9%) and raises the
+number of wrongly flagged non-reoffenders in the two groups from 368 to 611. Pushing to t = 0.25
+doubles DP (+107%) at an accuracy cost of 11.8 points. The ratios reach 1.0 only at t = 0.05, where
+everyone is flagged (accuracy 45.4%, below the 54.6% majority baseline): perfect parity is available only
+by abandoning prediction. Key insight: no threshold satisfies all three metrics. PP is within 3% of 1 only
+at t = 0.55, 0.65 and 0.75, and at those thresholds EO is at most 0.34.
+
+Page 11 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Figure 6. DP, EO, PP and overall accuracy across thresholds; the vertical line marks the recommended threshold.
+Table 16. Quantified trade-offs between selected thresholds, computed on the parity score s = min(m, 1/m). All 9
+consecutive steps are in results/tables/part24_consecutive_tradeoffs.csv.
+Move (t)
+
+DP
+
+EO
+
+PP
+
+DP gain
+
+EO gain
+
+PP
+change
+
+Accuracy
+change
+
+Cost (PP%
+per DP%)
+
+0.55 → 0.45
+
+0.39 → 0.51
+
+0.34 → 0.48
+
+0.98 → 0.92
+
++30.2%
+
++40.4%
+
+−6.1%
+
+−0.6 pts
+
+0.200
+
+0.45 → 0.35
+
+0.51 → 0.68
+
+0.48 → 0.63
+
+0.92 → 0.90
+
++33.6%
+
++31.8%
+
+−1.9%
+
+−5.9 pts
+
+0.057
+
+0.55 → 0.25
+
+0.39 → 0.81
+
+0.34 → 0.76
+
+0.98 → 0.88
+
++106.7%
+
++121.9%
+
+−10.0%
+
+−11.8 pts
+
+0.093
+
+0.55 → 0.05
+
+0.39 → 1.00
+
+0.34 → 1.00
+
+0.98 → 0.80
+
++156.7%
+
++193.8%
+
+−18.5%
+
+−22.0 pts
+
+0.118
+
+Decision rule and recommendation. Among thresholds whose accuracy is within 2 percentage points
+of the best (67.4% at t = 0.55), I choose the one with the highest worst-case parity score, min(sDP, sEO,
+sPP). The rule selects t = 0.45, and the choice is unchanged for tolerances of 1 to 5 points but moves to t
+= 0.35 at 7 to 10 points, so the 2-point tolerance is a stated value judgment, not a data-driven fact. At t =
+0.45: accuracy 66.8%; DP 0.507 (95% bootstrap CI [0.456, 0.562]); EO 0.478 [0.395, 0.562]; PP 0.920
+[0.819, 1.036]. PP is statistically indistinguishable from parity, but DP and EO are not: the false-positive
+rate is 49.0% for African-American versus 23.4% for Caucasian defendants, and 265 versus 103
+non-reoffenders are wrongly flagged. I recommend this threshold only for advisory use, paired with the
+monitoring described in Part 4.
+
+9 Part 3 – Descriptive analysis questions
+Each answer is written from the numbers computed above. Word counts are shown in grey (assignment target: about
+250–300 words).
+
+Question 1
+Why did the threshold-based approach and the direct logistic approach flag, or not flag, the same individuals as high
+risk? Quote the mismatch count and percentage, and compare the median linear prediction with the 0.5 threshold.
+
+The two rules disagreed on 296 of 2,165 test defendants (13.67%) and agreed on 1,869 (86.33%). The
+disagreement is nearly one-directional: 283 people were high risk under Model A but low risk under Model
+B, against only 13 the other way. Three mechanisms explain it. First, the cut-offs mean different things.
+Model A flags predictions at or above the median of its own output, 4.592 on COMPAS’s 1–10 scale, so it
+flags 50.07% of defendants by construction. Model B’s 0.5 is an absolute probability; because only 45.4%
+of test defendants reoffended, it flags 37.60%. Second, the targets differ. Model A imitates COMPAS’s
+proprietary score and adds 0.587 decile points for African-American defendants (p < 0.001), whereas
+Model B, trained on real outcomes, finds a log-odds gap of only 0.098 (p = 0.158). Third, a linear model is
+unbounded: Model A predicts from −1.48 to 15.67. The median rule also changes the error profile: Model
+A’s flag has higher recall (67.7% versus 56.1%) but lower precision (61.3% versus 67.7%) and a
+false-positive rate of 35.4% against 22.3%. Rankings still agree strongly (Spearman 0.960), so mismatches
+cluster near the boundary: their mean Model B probability is 0.457 (range 0.358–0.566). Cutting Model B
+at 0.449, which flags the same share as Model A, reduces mismatches to 220 (10.16%); so 76
+disagreements (26%) are pure threshold semantics and the rest reflects genuinely different models.
+Page 12 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Agreement is not accuracy: 568 defendants (26.2%) receive identical but wrong flags. Against actual
+outcomes Model A’s flag is 66.0% accurate and Model B’s 67.9%; on the disagreements Model B was right
+169 times, Model A 127.
+(267 words)
+
+Question 2
+Describe the subgroup with significantly different effects. Using the coefficients from the full model and both
+subgroups, explain why the trend differs, with exact coefficients and confidence intervals, and say which policy
+conclusion would change if the subgroup were ignored.
+
+I split by sex (A = male, n = 5,819; B = female, n = 1,395). No strict Simpson-style reversal exists: of 26
+scanned subgroup comparisons, 5 changed sign, but in none were both coefficients significantly non-zero.
+The robust finding is a stronger prior-record effect for women. Per standard deviation of priors_count the
+logit coefficient is 0.721 in the full data (odds ratio 2.06), 0.666 [0.594, 0.738] for men (OR 1.95) and
+1.024 [0.813, 1.235] for women (OR 2.78). The intervals do not overlap; the difference test gives z = 3.15,
+p = 0.0016, and p = 0.043 after Bonferroni correction over 26 tests. Why? Much of the gap is functional
+form rather than a different mechanism. Women have fewer priors (mean 2.28, median 1, versus 3.76 and
+2), so they sit on the steep part of a concave risk curve; with log(1 + priors) the coefficients converge to
+0.666 versus 0.811 (p = 0.075). The pooled model’s test calibration shows the consequence: women with
+at least five priors (n = 66) had predicted risk 0.582 against 0.667 observed, and women with at most one
+prior (n = 249) 0.288 against 0.245. If the subgroup were ignored, the pooled coefficient understates
+priors for women by about 30%, so a rule such as “flag five or more priors” would under-prioritise
+high-prior women and over-flag low-prior women. However, sex-specific models did not improve
+out-of-sample discrimination for women (AUC 0.718 versus 0.724 pooled), so the policy change is to audit
+calibration by sex, not to build separate scorecards. Splitting by race gives priors coefficients of 0.664
+(African-American) versus 0.856 (Caucasian), nominal p = 0.021 but Bonferroni p = 0.55, so I do not claim
+it.
+(282 words)
+
+Question 3
+State the variable dropped for the omitted-variable test. Report the before/after coefficient shift for at least four
+predictors in a table with percentage changes. Which coefficient shifted most, and what does that reveal about
+trusting an un-stress-tested model?
+
+I dropped priors_count, the strongest predictor (β = 0.701) and one correlated with
+race_African_American (r = 0.19), juv_misd_count (0.22) and age (0.17). Table 17 shows the before/after
+coefficients, with %Δ = (βreduced − βfull)/|βfull| × 100. By percentage, juv_misd_count moved most (−0.018
+→ 0.109, +708%, a sign flip), but its baseline is almost zero, so that figure is a denominator artefact.
+Measured in absolute terms and in standard errors, age shifted most (−0.526 → −0.312, +40.6%, 5.9 SE).
+The most consequential shift is race_African_American, from 0.098 (p = 0.158) to 0.302 (p < 0.001),
++207.7%: the odds ratio rises from 1.10 to 1.35. Other shifts: juv_fel_count 0.054 → 0.184 (+241%), felony
++70.6% and male +35.8%. The direction follows the omitted-variable logic: priors correlate positively with
+age and raise risk, so removing them weakens age’s protective coefficient. Four coefficients became
+significant and none lost significance, and test AUC fell from 0.734 to 0.664. The lesson is that a
+coefficient is conditional on the other variables in the model: the reduced model would tell a policy-maker
+that race predicts recidivism after adjustment, while the full model finds no significant race effect. Both
+models use the same 5,049 training rows, so the shifts are caused by the omission alone. Two caveats
+apply: logistic coefficients are non-collapsible, so some change occurs even without confounding, and
+priors may be a mediator of policing exposure, so neither model is causal. A model whose coefficients
+have never been stress-tested this way is a snapshot of correlations that can rearrange when one variable
+is absent, so I would not read any single coefficient, least of all a race coefficient, at face value.
+(273 words)
+
+Table 17. Coefficient shifts after dropping priors_count (selected predictors; full table in Section 6).
+Predictor
+
+β full
+
+β reduced (no priors_count)
+
+age
+
+−0.526
+
+−0.312
+
++40.6%
+
+unchanged
+
+race_African_American
+
+0.098
+
+0.302
+
++207.7%
+
+n.s. → significant
+
+juv_fel_count
+
+0.054
+
+0.184
+
++241.3%
+
+n.s. → significant
+
+juv_misd_count
+
+−0.018
+
+0.109
+
++708.4%
+
+n.s. → significant
+
+juv_other_count
+
+0.049
+
+0.104
+
++111.4%
+
+n.s. → significant
+
+Page 13 of 19
+
+% change
+
+Significance change
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Predictor
+
+Sanskar Saxena · Roll No. 0450
+
+β full
+
+β reduced (no priors_count)
+
+% change
+
+Significance change
+
+felony
+
+0.208
+
+0.354
+
++70.6%
+
+unchanged
+
+male
+
+0.319
+
+0.434
+
++35.8%
+
+unchanged
+
+Question 4
+As a practitioner, how would you detect a hidden confound you cannot currently see? Propose one concrete,
+real-world method.
+
+As a practitioner I would run a covariate-augmentation and sensitivity audit rather than trust the
+current feature set. Step 1: convene a domain-expert audit, with public defenders, probation officers and a
+county data steward, to list factors that plausibly drive both exposure to the justice system and
+reoffending but are absent from the file: employment, housing stability, substance-use treatment,
+supervision conditions and neighbourhood policing intensity. Step 2: obtain proxies for a pilot sample, for
+example census-tract arrest rates and unemployment joined by address, collected under data-protection
+approval. Step 3: refit the model with each candidate and measure coefficient shifts in standard-error
+units. My own experiment supplies the yardstick: omitting priors_count moved age by 5.9 SE and
+race_African_American by 2.9 SE. I would pre-register a trigger, for example any key or protected-attribute
+coefficient moving by more than 1 SE, which would send the model back for redesign. Step 4: for
+confounders that cannot be measured, quantify robustness with an omitted-variable sensitivity analysis
+(Cinelli and Hazlett, 2020) or an E-value (VanderWeele and Ding, 2017), asking how strong an
+unmeasured variable would have to be, relative to priors_count, to erase the effect of interest. Step 5:
+validate externally on another county or year and compare calibration within groups. Limitations are real:
+experts only name confounders they can imagine, proxies are noisy, and the audit costs time and data
+access. It is also unable to prove absence of confounding; it can only bound it. I would still prefer it to a
+single hold-out accuracy figure, which in this dataset (67.9%) said nothing about the 4 coefficients that
+changed significance when one variable disappeared.
+(269 words)
+
+Question 5
+Describe the 50-row adversarial subset: the common characteristic, the percentage that share it, and the statistical
+reason the model fails confidently, referring to coefficients or decision boundaries.
+
+The 50-row subset is 21 false positives and 29 false negatives, and the shared trait is age together with
+prior record at the extremes. None of the 50 is under 25 (test set: 20.0%); 56% are 45 or older (test
+set 21.2%). Within the subset, 100% of the false positives have five or more priors (median 18
+versus 2 in the test set), while 76% of the false negatives have at most one prior and 83% are 45 or
+older; none has a juvenile record. The mechanism is linear extrapolation. In Model B each standard
+deviation of priors adds 0.701 log-odds and each of age subtracts 0.526. The false positives average
++3.08 SD of priors, a contribution of +2.16 log-odds, so they sit at mean predicted probability 0.86; the
+false negatives average +1.38 SD of age (−0.72 log-odds) and −0.54 SD of priors, giving 0.19. Both sit in
+tails where the straight-line assumption is weakest: the extended model finds priors² = −0.086 (risk
+saturates) and age² = +0.196 (old age protects less than linear). Yet non-linearity is not the main story.
+Calibration shows 90 confident errors against 88.4 expected from the model’s own probabilities, and the
+extended model raises test AUC only from 0.734 to 0.739 while making 114 confident errors. Most of these
+failures are outcome noise that no feature in the file can predict. Fisher exact tests against the remaining
+test rows confirm both patterns (priors ≥ 5: 100% versus 26.2%; age ≥ 45: 82.8% versus 20.3%; both p <
+0.001). The errors also have a group pattern: 81% of the false positives are African-American, whereas
+72% of the false negatives are Caucasian.
+(275 words)
+
+Question 6
+Using the fairness trade-off chart, explain in concrete terms what the trade-off cost means for a real person.
+Describe two individuals, one from each group, and their outcomes under different thresholds.
+
+Consider two people who would not reoffend: Ms A (Caucasian) and Mr B (African-American). Using the
+sweep in Figure 5, the chance that each is wrongly labelled high risk is 7.0% versus 20.7% at t = 0.55,
+23.4% versus 49.0% at t = 0.45, 47.0% versus 74.7% at t = 0.35 and 67.3% versus 89.1% at t = 0.25. The
+sweep’s EO (the FPR ratio) improves from 0.34 to 0.76, but only because Ms A’s false-positive chance rises
+almost tenfold; parity is bought by flagging more innocent people, 778 across both groups at t = 0.25
+against 143 at t = 0.55. Prioritising precision and accuracy (t = 0.55, PP 0.98) has the opposite cost: Mr
+
+Page 14 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+B’s chance of an unwarranted flag is 2.9 times Ms A’s, while 72.6% of Caucasian reoffenders go unflagged
+against 42.8% of African-American reoffenders. At t = 0.45 that means 265 of 541 African-American
+non-reoffenders and 103 of 440 Caucasian non-reoffenders were wrongly flagged. Identical records are
+treated almost identically: a hypothetical 30-year-old man with three priors and a felony charge receives P
+= 0.53 if African-American and 0.51 if Caucasian, so both are flagged at t = 0.45 and neither at 0.55. The
+group gap therefore arises from different record distributions (mean priors 4.66 for Group B versus 2.45
+for Group A; mean age 32.5 versus 37.4), which may themselves reflect unequal policing. No threshold
+removes the harm; each moves it between people. A judge reading a flag should know that, at t = 0.45, a
+non-reoffending African-American defendant faces a 49.0% chance of that label.
+(261 words)
+
+Question 7
+Choose a threshold and argue, with at least three specific numbers, why it is defensible; give the strongest
+counterargument and acknowledge its validity.
+
+I choose t = 0.45. The defence rests on six numbers. Accuracy is 66.8% (66.5% within the two groups
+analysed), only 0.65 points below the best (67.4% at t = 0.55) and 12.2 points above the 54.6% majority
+baseline. Relative to t = 0.55, DP improves from 0.390 to 0.507 (+30.2%) and EO from 0.340 to 0.478
+(+40.4%) for that small accuracy cost. PP is 0.920 with a bootstrap interval [0.819, 1.036] that contains 1,
+so a “high-risk” label is about equally likely to be correct for both groups (59.1% versus 64.3%). The
+choice follows a stated rule: the highest worst-case parity score among thresholds within two accuracy
+points of the best, and it is stable for tolerances of one to five points. Lower thresholds look fairer on ratios
+but flag 84.1% of Group B at t = 0.35 and 93.9% at 0.25. Strongest counterargument: EO = 0.478
+means non-reoffending African-American defendants are flagged 2.09 times as often (49.0% versus
+23.4%; 265 versus 103 people), and the intervals for DP [0.456, 0.562] and EO [0.395, 0.562] exclude 1. A
+critic could say a threshold with that disparity is not fair in any practical sense, and could point to t = 0.35
+(EO 0.630). Fairness also cuts the other way here: at this threshold the model catches 83.0% of
+African-American reoffenders but only 48.5% of Caucasian reoffenders. I accept the objection’s validity. t
+= 0.35 does improve EO, but at an accuracy cost of 5.9 points and with 611 wrongly flagged people
+instead of 368. My choice is a values judgment about that exchange rate, not a fact the data can settle.
+(271 words)
+
+Question 8
+Should a policymaker prioritise demographic parity or equalized odds for this dataset? Cite the trade-off numbers
+and acknowledge what is sacrificed.
+
+I would recommend prioritising equalized odds, specifically parity in false-positive rates, over
+demographic parity. The groups’ base rates differ (51.5% versus 41.1% in the test set), so demographic
+parity would require equal flag rates regardless of what people did. At t = 0.45 the flag rates are 66.5%
+(B) and 33.7% (A), and closing that gap by lowering the threshold to 0.25 (DP 0.507 → 0.805, +59%)
+means flagging 93.9% of Group B and 75.6% of Group A: mass flagging, with overall accuracy falling to
+55.6%. Equalized odds conditions on the actual outcome, so it targets the concrete harm in this setting:
+non-reoffenders being wrongly detained or denied release, a direct loss of liberty whose burden can be
+audited from outcomes alone. The false-positive ratio is 0.478 at t = 0.45 and 0.755 at t = 0.25. In this
+model the two metrics rise together (r = 0.998; EO +58% over the same move), so choosing EO does not
+sacrifice DP; what is sacrificed is predictive parity and accuracy. PP slips from 0.920 to 0.882 (4.2% lower)
+and accuracy by 11.2 points. I find that acceptable because PP stays within 12% of parity, whereas a 0.48
+false-positive ratio is not. Two cautions: EO, defined as a minimum of ratios, can hide a large gap in the
+weaker ratio; and a race-blind model still gives DP 0.570 and EO 0.573 at t = 0.45, so the disparity runs
+through proxies such as priors and age, and policy must also scrutinise those inputs. I would write this into
+policy as a published ceiling on the false-positive ratio, audited annually.
+(267 words)
+
+10 Part 4 – Reflection essay
+“If a policy-maker asked you: ‘just give me one number: should we deploy this model or not?’, what would you say,
+and what is the limitation of that ‘one number’ answer that you discovered yourself through your analysis?”
+
+Direct answer. I would recommend conditional deployment: advisory decision support only, at t =
+0.45, with mandatory group-level monitoring, and not as an automated trigger for detention or
+sentencing. The headline reason is that 66.8% overall accuracy conceals a false-positive rate of 49.0% for
+Page 15 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+African-American versus 23.4% for Caucasian defendants.
+Why a single number fails. First, overall accuracy hides subgroup gaps. The headline 67.9% at 0.5 says
+nothing about who bears the errors: at t = 0.45 the false-positive ratio is 0.48 and the true-positive ratio
+0.59, and even discrimination differs by group (test AUC 0.748 for African-American versus 0.689 for
+Caucasian defendants); the pooled model also under-predicts Caucasian risk (0.385 predicted versus
+0.411 observed). Second, the threshold is a values question, not a data-driven fact. Accuracy peaks at t =
+0.55 (67.4%); the ratio metrics are “perfect” only at t = 0.05, where everyone is flagged and accuracy
+(45.4%) falls below the 54.6% baseline. My own rule picks 0.45 for any accuracy tolerance from one to five
+points and 0.35 from seven to ten, so the answer depends on a human choice about how much accuracy
+to trade. Even the conventional 0.5 is a choice: it misses 43.9% of reoffenders. Third, fairness metrics
+conflict. Base rates differ (51.5% versus 41.1%), so predictive parity (0.98 at t = 0.55) and equalized odds
+(0.34 at the same threshold) cannot both hold; improving EO to 0.76 at t = 0.25 flags 778 non-reoffenders
+instead of 143. Fourth, the model fails confidently on predictable subsets: 90 test cases (4.2%) are
+confident errors, concentrated among defendants with five or more priors (false positives) and older
+defendants with almost none (false negatives), and a single accuracy number gives no hint of where. Fifth,
+hidden confounds remain unknowable: omitting one variable moved the race coefficient from 0.098 to
+0.302 and made 4 coefficients significant, so any variable I have not measured could do the same. Finally,
+every ratio carries sampling error: with 747 Caucasian test defendants, DP at t = 0.45 has a 95%
+bootstrap interval of [0.456, 0.562] and PP [0.819, 1.036], which cannot distinguish parity from a gap of
+roughly 18%. A policy-maker given one number would inherit all of these problems without being able to
+see them.
+Grounding in evidence. Part 1: 296 mismatched flags (13.67%), median 4.592 versus the 0.5 threshold.
+Part 2.1: priors effect 1.024 (women) versus 0.666 (men), p = 0.0016. Part 2.2: race coefficient 0.098 →
+0.302. Part 2.3: 90 confident errors against 88.4 expected (21 false positives and 29 false negatives in the
+subset). Part 2.4 at t = 0.45: DP 0.507, EO 0.478, PP 0.920, accuracy 66.8%.
+Closing. The meta-lesson is that responsible deployment means publishing the trade-offs, not hiding
+them inside one metric. Decision-makers should see the threshold, the error rates by group, the confident
+failures and the unresolved confounds, and be able to challenge each. A model card carrying these tables,
+rather than a score alone, is what I would hand to the policy-maker.
+(499 words)
+
+11 Limitations and conclusion
+Limitations. (1) The target is two-year re-arrest recorded in one Florida county, which measures policing
+as well as behaviour; label bias cannot be tested with this file. (2) The analysis uses one random split
+(seed 450); the fairness estimates for Group A rest on 747 test defendants, so bootstrap intervals are wide
+(for example DP at t = 0.45: [0.456, 0.562]) and values at t ≥ 0.85 rest on very few flagged people. (3)
+Section 2.1 was a search, so I applied a Bonferroni correction across 26 comparisons and selected the
+reported split after the scan; the selection is declared, not hidden. (4) Race was included as a predictor to
+expose its effect; removing it did not remove the disparity (Appendix B). (5) Logistic coefficients are
+non-collapsible and priors may be a mediator, so no causal claim is made. (6) The recommended threshold
+depends on a stated 2-point accuracy tolerance. (7) The EO definition (a minimum of ratios) can mask the
+weaker disparity; Table 13 reports both ratios. Conclusion. A simple, transparent logistic model predicts
+two-year recidivism with accuracy 67.9% and AUC 0.734, yet every stress test exposed something the
+headline metrics hide: disagreement with the linear score (13.67%), coefficient fragility, structured
+confident errors and unequal error rates across groups. The defensible conclusion is conditional, advisory
+use with explicit, published trade-offs.
+
+References
+Angwin, J., Larson, J., Mattu, S., & Kirchner, L. (2016). Machine bias. ProPublica, 23 May 2016.
+Barocas, S., Hardt, M., & Narayanan, A. (2023). Fairness and Machine Learning: Limitations and Opportunities. MIT
+Press.
+Bickel, P. J., Hammel, E. A., & O’Connell, J. W. (1975). Sex bias in graduate admissions: Data from Berkeley.
+Science, 187(4175), 398–404.
+Chouldechova, A. (2017). Fair prediction with disparate impact: A study of bias in recidivism prediction
+instruments. Big Data, 5(2), 153–163.
+
+Page 16 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Cinelli, C., & Hazlett, C. (2020). Making sense of sensitivity: Extending omitted variable bias. Journal of the Royal
+Statistical Society: Series B, 82(1), 39–67.
+Dieterich, W., Mendoza, C., & Brennan, T. (2016). COMPAS risk scales: Demonstrating accuracy equity and
+predictive parity. Northpointe Inc.
+Dressel, J., & Farid, H. (2018). The accuracy, fairness, and limits of predicting recidivism. Science Advances, 4(1),
+eaao5580.
+Hardt, M., Price, E., & Srebro, N. (2016). Equality of opportunity in supervised learning. Advances in Neural
+Information Processing Systems, 29.
+Kleinberg, J., Mullainathan, S., & Raghavan, M. (2017). Inherent trade-offs in the fair determination of risk scores.
+Proceedings of ITCS 2017, LIPIcs 67, 43:1–43:23.
+Larson, J., Mattu, S., Kirchner, L., & Angwin, J. (2016). How we analyzed the COMPAS recidivism algorithm.
+ProPublica, 23 May 2016. Data: github.com/propublica/compas-analysis.
+Mood, C. (2010). Logistic regression: Why we cannot do what we think we can do, and what we can do about it.
+European Sociological Review, 26(1), 67–82.
+Pedregosa, F., et al. (2011). Scikit-learn: Machine learning in Python. Journal of Machine Learning Research, 12,
+2825–2830.
+Seabold, S., & Perktold, J. (2010). Statsmodels: Econometric and statistical modeling with Python. Proceedings of
+the 9th Python in Science Conference.
+Simpson, E. H. (1951). The interpretation of interaction in contingency tables. Journal of the Royal Statistical
+Society: Series B, 13(2), 238–241.
+VanderWeele, T. J., & Ding, P. (2017). Sensitivity analysis in observational research: Introducing the E-value.
+Annals of Internal Medicine, 167(4), 268–274.
+
+Page 17 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Sanskar Saxena · Roll No. 0450
+
+Appendix A – Fairness sweep with the reciprocal
+orientation
+The same classifier and test set with Group A = African-American and Group B = Caucasian. Every ratio is
+the reciprocal of the main table; EO now equals the smaller of the two ratios, which understates the larger
+disparity (for example at t = 0.45 the FPR ratio is 2.092 but EO reports 1.709). This is why the main
+analysis uses the opposite orientation.
+Table 18. Reciprocal orientation (A = African-American, B = Caucasian). NA at t = 0.95: Group B (Caucasian) has no
+flagged defendants, so every ratio has a zero denominator.
+DP
+
+TPR ratio
+
+FPR ratio
+
+EO
+
+PP
+
+0.05
+
+t
+
+1.000
+
+1.000
+
+1.000
+
+1.000
+
+1.254
+
+0.15
+
+1.043
+
+1.025
+
+1.053
+
+1.025
+
+1.232
+
+0.25
+
+1.242
+
+1.123
+
+1.324
+
+1.123
+
+1.134
+
+0.35
+
+1.475
+
+1.304
+
+1.587
+
+1.304
+
+1.108
+
+0.45
+
+1.971
+
+1.709
+
+2.092
+
+1.709
+
+1.087
+
+0.55
+
+2.567
+
+2.091
+
+2.938
+
+2.091
+
+1.021
+
+0.65
+
+4.212
+
+3.268
+
+5.693
+
+3.268
+
+0.973
+
+0.75
+
+4.072
+
+3.288
+
+4.717
+
+3.288
+
+1.012
+
+0.85
+
+6.502
+
+4.894
+
+10.573
+
+4.894
+
+0.944
+
+0.95
+
+NA
+
+NA
+
+NA
+
+NA
+
+NA
+
+Appendix B – Robustness checks
+Model B was refitted under three alternative choices: the alternative outcome is_recid; winsorised
+priors_count; and a “race-blind” model without race indicators. Fairness metrics are shown at the
+recommended threshold (A = Caucasian, B = African-American). The race-blind model keeps its AUC but
+does not eliminate the disparity, which runs through proxies such as prior record and age.
+Table 19. Robustness checks for Model B.
+AUC
+
+Accuracy at
+0.5
+
+Brier
+
+DP at
+0.45
+
+EO at
+0.45
+
+PP at
+0.45
+
+Main model B (target two_year_recid)
+
+0.734
+
+0.679
+
+0.208
+
+0.507
+
+0.478
+
+0.920
+
+Target = is_recid
+
+0.740
+
+0.680
+
+0.208
+
+0.544
+
+0.519
+
+0.886
+
+Priors winsorised at train p99 (22)
+
+0.735
+
+0.678
+
+0.208
+
+0.509
+
+0.478
+
+0.921
+
+Race-blind (no race indicators)
+
+0.735
+
+0.684
+
+0.208
+
+0.570
+
+0.573
+
+0.886
+
+Variant
+
+Appendix C – Reproducibility and quality control
+How
+to
+regenerate.
+Install
+the
+packages
+in
+requirements.txt,
+open
+notebook/CSET485_Assignment1_COMPAS.ipynb and run all cells. The notebook downloads the dataset if
+data/compas-scores-two-years.csv is absent, fits every model with random_state = 450, and writes
+results/results.json, results/tables/*.csv and results/figures/*.png. Then run python src/build_report.py to
+rebuild this PDF (the last notebook cell does this automatically when reportlab is installed). Environment
+used: Python 3.12.3, numpy 2.4.4, pandas 3.0.2, scikit-learn 1.8.0, statsmodels 0.15.0, scipy 1.17.1,
+matplotlib
+3.10.8.
+Data
+file
+SHA-256:
+c451db85908b2f7fef1d83203bedf6b71ecda0d5af468d82ae62178f91d0cc7d.
+Checks performed. The first block is evaluated when this PDF is built; the second block was run once as
+an independent re-computation (src/verify_results.py) that refits the models with a different library and
+compares headline numbers.
+Table 20. Quality-control checklist.
+Check
+
+Result
+
+Dataset is COMPAS two-year file
+
+PASS
+
+Random seed is 450
+
+PASS
+
+Split is 70/30
+
+PASS
+
+Models A (OLS) and B (logistic) implemented and cross-checked with scikit-learn
+
+PASS
+
+Four stress tests present (2.1–2.4)
+
+PASS
+
+Page 18 of 19
+
+CSET485 – AI and Society · Assignment #1 · COMPAS stress-tests
+
+Check
+
+Sanskar Saxena · Roll No. 0450
+
+Result
+
+Fairness sweep covers all 10 thresholds 0.05–0.95
+
+PASS
+
+All eight Part 3 answers within 250–300 words
+
+PASS
+
+Reflection about 500 words with the four required parts
+
+PASS
+
+Mismatch count equals off-diagonal of the confusion matrix
+
+PASS
+
+Adversarial subset: 50 rows drawn with seed 450
+
+PASS
+
+Independent refit: median of Model A predictions
+
+PASS (4.5923)
+
+Independent refit: mismatch count between the two flags
+
+PASS (296)
+PASS (acc 0.6790, AUC
+0.7341)
+
+Independent refit: Model B accuracy and AUC
+Independent refit: confident false positives / false negatives
+
+PASS (35 / 55)
+
+Independent recomputation of DP / EO / PP at all 10 thresholds
+
+PASS (max abs difference
+4.8e-07; NA pattern
+identical)
+
+Independent refit: reduced-model race coefficient
+
+PASS (0.3024 vs 0.3024)
+
+Independent refit: priors_count coefficient, men
+
+PASS (0.6660 vs 0.6660)
+
+Independent refit: priors_count coefficient, women
+
+PASS (1.0240 vs 1.0240)
+
+Steps the student must still complete personally: upload the repository to GitHub and submit the link; confirm the
+title-page details; and check the submission deadline with the instructor.
+
+Page 19 of 19
+
+

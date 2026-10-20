@@ -1,0 +1,25 @@
+trait,group,n,pct_in_group,pct_in_rest_of_test,fisher_p
+age < 25,all 50,50,0.0,20.52009,2e-05
+age < 25,FP only,21,0.0,20.52009,0.01267
+age < 25,FN only,29,0.0,20.52009,0.00196
+age >= 45,all 50,50,56.0,20.33097,0.0
+age >= 45,FP only,21,19.04762,20.33097,1.0
+age >= 45,FN only,29,82.75862,20.33097,0.0
+male,all 50,50,72.0,80.23641,0.15332
+male,FP only,21,95.2381,80.23641,0.09962
+male,FN only,29,55.17241,80.23641,0.00353
+African-American,all 50,50,44.0,51.72577,0.31725
+African-American,FP only,21,80.95238,51.72577,0.00786
+African-American,FN only,29,17.24138,51.72577,0.00023
+priors >= 5,all 50,50,42.0,26.19385,0.02193
+priors >= 5,FP only,21,100.0,26.19385,0.0
+priors >= 5,FN only,29,0.0,26.19385,0.00033
+priors <= 1,all 50,50,44.0,47.28132,0.66992
+priors <= 1,FP only,21,0.0,47.28132,0.0
+priors <= 1,FN only,29,75.86207,47.28132,0.00239
+any juvenile record,all 50,50,12.0,14.75177,0.69017
+any juvenile record,FP only,21,28.57143,14.75177,0.11261
+any juvenile record,FN only,29,0.0,14.75177,0.01576
+felony charge,all 50,50,58.0,65.76832,0.29164
+felony charge,FP only,21,80.95238,65.76832,0.17011
+felony charge,FN only,29,41.37931,65.76832,0.00943

@@ -1,0 +1,5 @@
+race_group,n,recid_rate,mean_decile,mean_priors,mean_age
+African-American,3696,0.514,5.369,4.439,32.741
+Caucasian,2454,0.394,3.735,2.587,37.727
+Hispanic,637,0.364,3.463,2.253,35.455
+Other,427,0.356,3.084,2.016,35.131

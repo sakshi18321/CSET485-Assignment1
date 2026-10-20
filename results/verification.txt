@@ -1,0 +1,8 @@
+Independent refit: median of Model A predictions | PASS (4.5923)
+Independent refit: mismatch count between the two flags | PASS (296)
+Independent refit: Model B accuracy and AUC | PASS (acc 0.6790, AUC 0.7341)
+Independent refit: confident false positives / false negatives | PASS (35 / 55)
+Independent recomputation of DP / EO / PP at all 10 thresholds | PASS (max abs difference 4.8e-07; NA pattern identical)
+Independent refit: reduced-model race coefficient | PASS (0.3024 vs 0.3024)
+Independent refit: priors_count coefficient, men | PASS (0.6660 vs 0.6660)
+Independent refit: priors_count coefficient, women | PASS (1.0240 vs 1.0240)

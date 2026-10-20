@@ -1,0 +1,10 @@
+,beta_full,p_full,beta_reduced,p_reduced,abs_change,pct_change,change_in_SE_units,sign_flip,sig_full,sig_reduced
+age,-0.525677,0.0,-0.312156,0.0,0.213521,40.618287,5.916881,False,True,True
+juv_fel_count,0.053822,0.238207,0.183674,0.000109,0.129852,241.262947,2.845649,False,False,True
+juv_misd_count,-0.017886,0.611579,0.108822,0.001756,0.126707,708.434256,3.597579,True,False,True
+juv_other_count,0.049162,0.170214,0.103927,0.005046,0.054764,111.394767,1.527797,False,False,True
+male,0.3194,5.5e-05,0.433804,0.0,0.114404,35.818528,1.445037,False,True,True
+felony,0.207742,0.001329,0.354424,0.0,0.146681,70.607199,2.26617,False,True,True
+race_African_American,0.098274,0.15782,0.302374,5e-06,0.2041,207.684715,2.933428,False,False,True
+race_Hispanic,-0.088374,0.441379,-0.123589,0.265347,-0.035214,-39.847058,-0.306769,False,False,False
+race_Other,-0.179973,0.189879,-0.23862,0.074837,-0.058647,-32.586375,-0.427187,False,False,False

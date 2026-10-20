@@ -1,0 +1,21 @@
+,Full test set,Adversarial subset (50),  of which false positives,  of which false negatives,All qualifying errors (90)
+n,2165.0,50.0,21.0,29.0,90.0
+age_mean,34.701,45.96,38.524,51.345,46.656
+age_median,31.0,47.5,37.0,50.0,48.5
+pct_age_lt25,20.046,0.0,0.0,0.0,1.111
+pct_age_ge45,21.155,56.0,19.048,82.759,60.0
+pct_male,80.046,72.0,95.238,55.172,77.778
+pct_African_American,51.547,44.0,80.952,17.241,42.222
+pct_Caucasian,34.503,48.0,14.286,72.414,47.778
+pct_Hispanic,8.083,6.0,4.762,6.897,6.667
+pct_Other,5.866,2.0,0.0,3.448,3.333
+priors_mean,3.556,8.22,18.429,0.828,7.067
+priors_median,2.0,2.0,18.0,1.0,2.0
+pct_priors_ge5,26.559,42.0,100.0,0.0,40.0
+pct_priors_0,29.376,26.0,0.0,44.828,26.667
+pct_priors_le1,47.206,44.0,0.0,75.862,45.556
+pct_any_juvenile,14.688,12.0,28.571,0.0,11.111
+pct_felony,65.589,58.0,80.952,41.379,55.556
+actual_recid_rate,45.404,58.0,0.0,100.0,61.111
+mean_decile_score,4.628,4.26,6.667,2.517,3.933
+mean_pred_prob,0.455,0.468,0.856,0.187,0.439
